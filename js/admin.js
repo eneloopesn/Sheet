@@ -1,295 +1,236 @@
+const STATUS = [
+  { id: "all", label: "全部" },
+  { id: "pending", label: "待處理" },
+  { id: "preparing", label: "製作中" },
+  { id: "ready", label: "可取餐" },
+  { id: "done", label: "已完成" },
+  { id: "cancelled", label: "已取消" },
+];
+
+const STATUS_LABEL = Object.fromEntries(
+  STATUS.filter((s) => s.id !== "all").map((s) => [s.id, s.label])
+);
+
+const NEXT_ACTIONS = {
+  pending: [
+    { status: "preparing", label: "開始製作" },
+    { status: "cancelled", label: "取消" },
+  ],
+  preparing: [
+    { status: "ready", label: "完成可取" },
+    { status: "cancelled", label: "取消" },
+  ],
+  ready: [{ status: "done", label: "已取餐" }],
+  done: [],
+  cancelled: [],
+};
+
+let filter = "all";
+let orders = [];
+
 const els = {
-  cards: document.getElementById('stat-cards'),
-  topItems: document.getElementById('top-items'),
-  hourChart: document.getElementById('hour-chart'),
-  statusCards: document.getElementById('status-cards'),
-  ordersBody: document.getElementById('orders-body'),
-  refresh: document.getElementById('refresh-btn'),
-  toast: document.getElementById('toast'),
-  setupPanel: document.getElementById('cloud-setup'),
-  storageIdText: document.getElementById('storage-id-text'),
-  apiKeyText: document.getElementById('api-key-text'),
-  apiKeyInput: document.getElementById('api-key-input'),
-  saveApiKeyBtn: document.getElementById('save-api-key-btn'),
-  orderLink: document.getElementById('order-link'),
-  adminLink: document.getElementById('admin-link'),
-  createBtn: document.getElementById('create-storage-btn'),
-  connectBtn: document.getElementById('connect-storage-btn'),
-  storageInput: document.getElementById('storage-id-input'),
-  copyOrderBtn: document.getElementById('copy-order-link'),
-  copyAdminBtn: document.getElementById('copy-admin-link'),
+  stats: document.getElementById("stats"),
+  filters: document.getElementById("filters"),
+  root: document.getElementById("orders-root"),
+  lastUpdated: document.getElementById("last-updated"),
+  refreshBtn: document.getElementById("refresh-btn"),
+  exportBtn: document.getElementById("export-btn"),
+  importFile: document.getElementById("import-file"),
+  clearBtn: document.getElementById("clear-btn"),
+  toast: document.getElementById("toast"),
 };
 
-const STATUS_LABEL = {
-  pending: '待處理',
-  preparing: '製作中',
-  done: '已完成',
-  cancelled: '已取消',
-};
-
-function money(n) {
-  return `$${Number(n).toLocaleString('zh-TW')}`;
-}
-
-let toastTimer;
-function showToast(msg) {
-  els.toast.textContent = msg;
-  els.toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => els.toast.classList.remove('show'), 2200);
+function toast(message) {
+  els.toast.textContent = message;
+  els.toast.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => els.toast.classList.remove("show"), 2200);
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleString('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  return new Date(iso).toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-function maskKey(key) {
-  if (!key) return '尚未設定';
-  if (key.length <= 8) return '********';
-  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+function renderFilters() {
+  els.filters.innerHTML = STATUS.map(
+    (s) => `
+    <button class="chip ${filter === s.id ? "active" : ""}" type="button" data-filter="${s.id}">
+      ${s.label}
+    </button>
+  `
+  ).join("");
 }
 
-function renderSetup() {
-  const key = OrderStore.getApiKey();
-  if (els.apiKeyText) els.apiKeyText.textContent = maskKey(key);
-  if (els.apiKeyInput && key && !els.apiKeyInput.value) {
-    els.apiKeyInput.value = key;
-  }
+els.filters.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-filter]");
+  if (!btn) return;
+  filter = btn.dataset.filter;
+  renderFilters();
+  renderOrders();
+});
 
-  const links = OrderStore.shareLinks();
-  if (!links) {
-    els.storageIdText.textContent = '尚未建立';
-    els.orderLink.textContent = '—';
-    els.adminLink.textContent = '—';
-    els.orderLink.removeAttribute('href');
-    els.adminLink.removeAttribute('href');
-    return;
-  }
-  els.storageIdText.textContent = links.id;
-  els.orderLink.textContent = links.orderUrl;
-  els.orderLink.href = links.orderUrl;
-  els.adminLink.textContent = links.adminUrl;
-  els.adminLink.href = links.adminUrl;
-  if (els.storageInput && !els.storageInput.value) {
-    els.storageInput.value = links.id;
-  }
-}
+function renderStats() {
+  const active = orders.filter((o) => !["done", "cancelled"].includes(o.status));
+  const revenue = orders
+    .filter((o) => o.status !== "cancelled")
+    .reduce((sum, o) => sum + o.total, 0);
 
-function renderStats(stats) {
-  els.cards.innerHTML = `
-    <div class="stat-card" style="animation-delay:0ms">
-      <div class="label">今日訂單</div>
-      <div class="value">${stats.todayOrders}</div>
-      <div class="sub">累計 ${stats.totalOrders} 筆有效訂單</div>
+  els.stats.innerHTML = `
+    <div class="stat">
+      <div class="label">進行中</div>
+      <div class="value">${active.length}</div>
     </div>
-    <div class="stat-card" style="animation-delay:50ms">
-      <div class="label">今日營收</div>
-      <div class="value">${money(stats.todayRevenue)}</div>
-      <div class="sub">總營收 ${money(stats.revenue)}</div>
+    <div class="stat">
+      <div class="label">訂單數</div>
+      <div class="value">${orders.length}</div>
     </div>
-    <div class="stat-card" style="animation-delay:100ms">
-      <div class="label">客單價</div>
-      <div class="value">${money(stats.avgOrder)}</div>
-      <div class="sub">有效訂單平均</div>
-    </div>
-    <div class="stat-card" style="animation-delay:150ms">
-      <div class="label">待處理</div>
-      <div class="value">${stats.byStatus.pending}</div>
-      <div class="sub">製作中 ${stats.byStatus.preparing}</div>
+    <div class="stat">
+      <div class="label">營業額（未含取消）</div>
+      <div class="value">$${revenue}</div>
     </div>
   `;
+}
 
-  els.statusCards.innerHTML = Object.entries(stats.byStatus)
-    .map(
-      ([key, count], i) => `
-      <div class="stat-card" style="animation-delay:${i * 40}ms">
-        <div class="label">${STATUS_LABEL[key]}</div>
-        <div class="value">${count}</div>
-      </div>`
-    )
-    .join('');
+function renderOrders() {
+  const list =
+    filter === "all" ? orders : orders.filter((o) => o.status === filter);
 
-  const maxQty = Math.max(1, ...stats.topItems.map((i) => i.qty));
-  if (!stats.topItems.length) {
-    els.topItems.innerHTML = `<div class="cart-empty" style="color:var(--muted)">尚無銷售資料</div>`;
-  } else {
-    els.topItems.innerHTML = stats.topItems
-      .map(
-        (item) => `
-        <div class="bar-row">
-          <div>${item.name}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${(item.qty / maxQty) * 100}%"></div></div>
-          <div>${item.qty} 份</div>
-        </div>`
-      )
-      .join('');
-    requestAnimationFrame(() => {
-      els.topItems.querySelectorAll('.bar-fill').forEach((el) => {
-        const w = el.style.width;
-        el.style.width = '0';
-        requestAnimationFrame(() => {
-          el.style.width = w;
-        });
-      });
-    });
-  }
-
-  const activeHours = stats.byHour.filter((h) => h.hour >= 10 && h.hour <= 21);
-  const maxCount = Math.max(1, ...activeHours.map((h) => h.count));
-  els.hourChart.innerHTML = activeHours
-    .map((h) => {
-      const height = Math.max(4, (h.count / maxCount) * 120);
-      return `
-        <div class="hour-col" title="${h.hour}:00 · ${h.count} 單 · ${money(h.revenue)}">
-          <div class="hour-bar" style="height:${height}px"></div>
-          <div class="hour-label">${h.hour}</div>
-        </div>`;
-    })
-    .join('');
-
-  if (!stats.recentOrders.length) {
-    els.ordersBody.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">還沒有訂單</td></tr>`;
+  if (!list.length) {
+    els.root.innerHTML = `<div class="panel empty">目前沒有訂單</div>`;
     return;
   }
 
-  els.ordersBody.innerHTML = stats.recentOrders
+  els.root.innerHTML = list
     .map((order) => {
-      const items = order.items.map((i) => `${i.name}×${i.qty}`).join('、');
+      const actions = NEXT_ACTIONS[order.status] || [];
       return `
-        <tr>
-          <td>${formatTime(order.createdAt)}<div style="color:var(--muted);font-size:0.8rem">${order.id}</div></td>
-          <td>${order.customerName}</td>
-          <td>${items}</td>
-          <td>${money(order.total)}</td>
-          <td><span class="status ${order.status}">${STATUS_LABEL[order.status]}</span></td>
-          <td>
-            <div class="status-actions">
-              <button type="button" data-id="${order.id}" data-status="preparing">製作中</button>
-              <button type="button" data-id="${order.id}" data-status="done">完成</button>
-              <button type="button" data-id="${order.id}" data-status="cancelled">取消</button>
+        <article class="order-card" data-id="${order.id}">
+          <div class="order-head">
+            <div>
+              <strong>${order.orderNo}</strong>
+              <span class="badge ${order.status}">${STATUS_LABEL[order.status]}</span>
             </div>
-          </td>
-        </tr>`;
+            <div style="font-weight:800;">$${order.total}</div>
+          </div>
+          <div class="order-meta">
+            <span>取餐：${order.customerName}</span>
+            ${order.phone ? `<span>電話：${order.phone}</span>` : ""}
+            <span>下單：${formatTime(order.createdAt)}</span>
+          </div>
+          <ul class="order-items">
+            ${order.items
+              .map((i) => `<li>${i.name} × ${i.qty}（$${i.price * i.qty}）</li>`)
+              .join("")}
+          </ul>
+          ${
+            order.note
+              ? `<p style="color:var(--warn);margin:0.5rem 0 0;">備註：${order.note}</p>`
+              : ""
+          }
+          <div class="order-actions" style="margin-top:0.8rem;">
+            ${actions
+              .map(
+                (a) => `
+              <button class="btn ${a.status === "cancelled" ? "btn-danger" : "btn-primary"}" type="button"
+                data-action="status" data-status="${a.status}" data-id="${order.id}">
+                ${a.label}
+              </button>
+            `
+              )
+              .join("")}
+            <button class="btn btn-ghost" type="button" data-action="delete" data-id="${order.id}">
+              刪除
+            </button>
+          </div>
+        </article>
+      `;
     })
-    .join('');
+    .join("");
 }
 
-async function loadStats() {
-  if (!OrderStore.getStorageId()) {
-    els.cards.innerHTML = `
-      <div class="stat-card" style="grid-column: 1 / -1">
-        <div class="label">雲端訂單庫</div>
-        <div class="value" style="font-size:1.4rem">尚未啟用</div>
-        <div class="sub">請先在下方建立或連接訂單庫</div>
-      </div>`;
-    els.topItems.innerHTML = '';
-    els.hourChart.innerHTML = '';
-    els.statusCards.innerHTML = '';
-    els.ordersBody.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">啟用後即可查看訂單</td></tr>`;
-    return;
-  }
-
-  const stats = await OrderStore.getStats();
-  renderStats(stats);
+function loadOrders() {
+  orders = OrderStore.list();
+  els.lastUpdated.textContent = new Date().toLocaleTimeString("zh-TW");
+  renderStats();
+  renderOrders();
 }
 
-async function copyText(text) {
-  await navigator.clipboard.writeText(text);
-  showToast('已複製連結');
-}
-
-els.saveApiKeyBtn.addEventListener('click', () => {
-  const key = els.apiKeyInput.value.trim();
-  if (!key) {
-    showToast('請貼上 API Key');
-    return;
-  }
-  OrderStore.setApiKey(key);
-  renderSetup();
-  showToast('API Key 已儲存');
-});
-
-els.createBtn.addEventListener('click', async () => {
-  const typedKey = els.apiKeyInput.value.trim();
-  if (typedKey) OrderStore.setApiKey(typedKey);
-
-  els.createBtn.disabled = true;
-  try {
-    await OrderStore.createStorage();
-    renderSetup();
-    await loadStats();
-    showToast('雲端訂單庫已建立');
-  } catch (err) {
-    const msg =
-      err && err.message
-        ? err.message
-        : '建立失敗，請確認已用網站網址開啟（非 file://）';
-    showToast(msg);
-  } finally {
-    els.createBtn.disabled = false;
-  }
-});
-
-els.connectBtn.addEventListener('click', async () => {
-  const id = els.storageInput.value.trim();
-  if (!id) {
-    showToast('請輸入訂單庫 ID');
-    return;
-  }
-  if (!id.includes('/') && !/^https?:\/\//i.test(id)) {
-    showToast('ID 格式應為 userId/itemId');
-    return;
-  }
-  OrderStore.setStorageId(id);
-  renderSetup();
-  try {
-    await loadStats();
-    showToast('已連接雲端訂單庫');
-  } catch (err) {
-    showToast(err.message || '連接失敗');
-  }
-});
-
-els.copyOrderBtn.addEventListener('click', () => {
-  const links = OrderStore.shareLinks();
-  if (!links) return showToast('請先建立訂單庫');
-  copyText(links.orderUrl).catch(() => showToast('複製失敗'));
-});
-
-els.copyAdminBtn.addEventListener('click', () => {
-  const links = OrderStore.shareLinks();
-  if (!links) return showToast('請先建立訂單庫');
-  copyText(links.adminUrl).catch(() => showToast('複製失敗'));
-});
-
-els.ordersBody.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-id][data-status]');
+els.root.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
   if (!btn) return;
+  const { action, id, status } = btn.dataset;
+  btn.disabled = true;
+
   try {
-    const order = await OrderStore.updateStatus(btn.dataset.id, btn.dataset.status);
-    showToast(`已更新為${STATUS_LABEL[order.status]}`);
-    await loadStats();
+    if (action === "status") {
+      await OrderStore.updateStatus(id, status);
+      toast(`已更新為「${STATUS_LABEL[status]}」`);
+    }
+    if (action === "delete") {
+      if (!confirm("確定刪除此訂單？")) return;
+      await OrderStore.remove(id);
+      toast("訂單已刪除");
+    }
   } catch (err) {
-    showToast(err.message);
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+    loadOrders();
   }
 });
 
-els.refresh.addEventListener('click', () => {
-  loadStats()
-    .then(() => showToast('已更新'))
-    .catch((err) => showToast(err.message || '載入失敗'));
+els.refreshBtn.addEventListener("click", async () => {
+  await OrderStore.ready();
+  loadOrders();
+  toast("已重新整理");
 });
 
-renderSetup();
-loadStats().catch((err) => showToast(err.message || '無法載入統計'));
-setInterval(() => {
-  if (OrderStore.getStorageId()) {
-    loadStats().catch(() => {});
+els.exportBtn.addEventListener("click", () => {
+  const blob = new Blob([OrderStore.exportJson()], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `roast-cook-orders-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast("已匯出訂單");
+});
+
+els.importFile.addEventListener("change", async () => {
+  const file = els.importFile.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const count = await OrderStore.importJson(text, { merge: true });
+    loadOrders();
+    toast(`已匯入，目前共 ${count} 筆`);
+  } catch (err) {
+    toast(err.message || "匯入失敗");
+  } finally {
+    els.importFile.value = "";
   }
-}, 8000);
+});
+
+els.clearBtn.addEventListener("click", async () => {
+  if (!confirm("確定清空全部訂單？此動作無法復原。")) return;
+  try {
+    await OrderStore.clearAll();
+    loadOrders();
+    toast("已清空訂單");
+  } catch (err) {
+    toast(err.message || "清空失敗");
+  }
+});
+
+window.addEventListener("orders-updated", loadOrders);
+
+renderFilters();
+initSyncBanner("sync-banner");
+OrderStore.ready().then(loadOrders);

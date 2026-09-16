@@ -1,9 +1,26 @@
-// 雲端設定
-// 1) 前往 https://app.jsonstorage.net 免費註冊
-// 2) 建立一把有 Create 權限的 API Key，貼到下方 apiKey
-// 3) 開啟後台按「建立訂單庫」
-// 4) 建立後可把 storageId 填回這裡，之後就不用帶 ?sid=
-window.APP_CONFIG = {
-  apiKey: '236a2f8a-f51b-49be-9ff6-cec9add70d6d',
-  storageId: '20260920',
+/**
+ * Firebase 設定（跨裝置共用訂單必填）
+ *
+ * 設定步驟見 README.md
+ * 把下方物件改成 Firebase 主控台複製的設定即可。
+ * databaseURL 必填（Realtime Database）。
+ */
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  databaseURL: "https://project-5284780330097518053-default-rtdb.firebaseio.com/",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
 };
+
+/** 是否已填好可用的雲端設定 */
+function isCloudConfigured() {
+  return Boolean(
+    FIREBASE_CONFIG &&
+      FIREBASE_CONFIG.apiKey &&
+      FIREBASE_CONFIG.databaseURL && 
+      !String(FIREBASE_CONFIG.apiKey).includes("請填")
+  );
+}
