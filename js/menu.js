@@ -85,11 +85,19 @@ window.ROAST_MENU = [
     image: '🍄',
   },
   {
-    id: 'sp01',
-    name: '雞油拌飯盒／小菜飯盒',
+    id: 'sp00',
+    name: '雞油拌飯盒',
     category: '特別餐點',
     price: 80,
-    desc: '雞油拌飯或小菜飯盒，簡單滿足、實惠好入口。',
+    desc: '雞油拌飯，簡單滿足、實惠好入口。',
+    image: '🍚',
+  },
+  {
+    id: 'sp01',
+    name: '小菜飯盒',
+    category: '特別餐點',
+    price: 80,
+    desc: '小菜飯盒，簡單滿足、實惠好入口。',
     image: '🍚',
   },
   {
