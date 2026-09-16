@@ -1,13 +1,32 @@
 const OrderStore = (() => {
   const LOCAL_SID_KEY = 'roast-cook-storage-id';
+  const LOCAL_KEY_KEY = 'roast-cook-api-key';
   const API_BASE = 'https://api.jsonstorage.net/v1/json';
+
+  function getApiKey() {
+    const fromConfig = (
+      window.APP_CONFIG && window.APP_CONFIG.apiKey
+        ? String(window.APP_CONFIG.apiKey)
+        : ''
+    ).trim();
+    if (fromConfig) return fromConfig;
+    return (localStorage.getItem(LOCAL_KEY_KEY) || '').trim();
+  }
+
+  function setApiKey(key) {
+    const value = String(key || '').trim();
+    if (value) localStorage.setItem(LOCAL_KEY_KEY, value);
+    else localStorage.removeItem(LOCAL_KEY_KEY);
+    return value;
+  }
 
   function resolveStorageId() {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = (params.get('sid') || '').trim();
     if (fromQuery) {
-      localStorage.setItem(LOCAL_SID_KEY, decodeURIComponent(fromQuery));
-      return decodeURIComponent(fromQuery);
+      const decoded = decodeURIComponent(fromQuery);
+      localStorage.setItem(LOCAL_SID_KEY, decoded);
+      return decoded;
     }
     const fromConfig = (
       window.APP_CONFIG && window.APP_CONFIG.storageId
@@ -32,60 +51,72 @@ const OrderStore = (() => {
     const value = String(id || '').trim();
     if (!value) throw new Error('尚未設定雲端訂單庫');
     if (/^https?:\/\//i.test(value)) return value;
-    // 新版格式：userId/itemId
-    if (value.includes('/')) return `${API_BASE}/${value}`;
-    // 舊版單一 UUID（jsonstorage / jsonblob 相容嘗試）
-    if (/^[0-9a-f-]{36}$/i.test(value)) {
-      return `https://jsonstorage.net/api/items/${value}`;
-    }
-    return `${API_BASE}/${value}`;
+    return `${API_BASE}/${value.replace(/^\/+/, '')}`;
+  }
+
+  function withKey(url, forWrite) {
+    const key = getApiKey();
+    if (!forWrite) return url;
+    if (!key) throw new Error('請先填入 API Key');
+    const join = url.includes('?') ? '&' : '?';
+    return `${url}${join}apiKey=${encodeURIComponent(key)}`;
   }
 
   function extractStorageId(uriOrId) {
     const raw = String(uriOrId || '').trim();
     if (!raw) return '';
-
-    // https://api.jsonstorage.net/v1/json/{userId}/{itemId}
     const match = raw.match(/\/v1\/json\/([^/?#]+\/[^/?#]+)/i);
     if (match) return match[1];
-
-    // 已是 userId/itemId
-    if (/^[^/]+\/[^/]+$/.test(raw)) return raw;
-
-    // 舊版整段 URL 的最後一段
-    const clean = raw.split('?')[0].replace(/\/$/, '');
-    return clean.split('/').pop() || '';
+    if (/^[^/\s]+\/[^/\s]+$/.test(raw)) return raw;
+    return '';
   }
 
   function assertOnline() {
     if (location.protocol === 'file:') {
       throw new Error(
-        '請勿直接雙擊開啟檔案。請上傳到網站，或用本機伺服器開啟後再建立訂單庫'
+        '請勿直接雙擊開啟檔案。請用 Live Server 或上傳網站後再開啟'
       );
     }
   }
 
+  function parseOrdersPayload(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.orders)) return data.orders;
+    return [];
+  }
+
   async function createStorage() {
     assertOnline();
+    if (!getApiKey()) {
+      throw new Error('請先填入 API Key（可到 app.jsonstorage.net 免費申請）');
+    }
 
-    const res = await fetch(API_BASE, {
+    const res = await fetch(withKey(API_BASE, true), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         Accept: 'application/json',
       },
-      body: JSON.stringify([]),
+      body: JSON.stringify({
+        orders: [],
+        updatedAt: new Date().toISOString(),
+      }),
     });
 
-    if (!res.ok) {
-      throw new Error(`無法建立雲端訂單庫（${res.status}），請稍後再試`);
-    }
-
+    const text = await res.text();
     let data = null;
     try {
-      data = await res.json();
+      data = text ? JSON.parse(text) : null;
     } catch {
       data = null;
+    }
+
+    if (!res.ok) {
+      const detail =
+        (data && (data.message || data.error || data.title)) ||
+        text.slice(0, 140) ||
+        res.status;
+      throw new Error(`建立失敗：${detail}`);
     }
 
     const uri =
@@ -93,9 +124,7 @@ const OrderStore = (() => {
       res.headers.get('Location') ||
       '';
     const id = extractStorageId(uri);
-    if (!id || !id.includes('/')) {
-      throw new Error('建立成功但無法取得 ID，請換網路環境後重試');
-    }
+    if (!id) throw new Error('建立成功但無法取得 ID');
 
     setStorageId(id);
     return id;
@@ -106,33 +135,44 @@ const OrderStore = (() => {
     const id = getStorageId();
     if (!id) throw new Error('尚未設定雲端訂單庫');
 
-    const res = await fetch(endpoint(id), {
+    // 讀取通常不需 key；若失敗再帶 key 重試
+    let res = await fetch(endpoint(id), {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
+    if ((res.status === 401 || res.status === 403) && getApiKey()) {
+      res = await fetch(withKey(endpoint(id), true), {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+    }
     if (res.status === 404) {
       throw new Error('找不到雲端訂單庫，請到後台重新按「建立訂單庫」');
     }
     if (!res.ok) throw new Error(`讀取訂單失敗（${res.status}）`);
 
     const data = await res.json();
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.orders)) return data.orders;
-    return [];
+    return parseOrdersPayload(data);
   }
 
   async function saveOrders(orders, attempt = 0) {
     assertOnline();
     const id = getStorageId();
     if (!id) throw new Error('尚未設定雲端訂單庫');
+    if (!getApiKey()) throw new Error('寫入訂單需要 API Key');
 
-    const res = await fetch(endpoint(id), {
+    const payload = {
+      orders,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const res = await fetch(withKey(endpoint(id), true), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         Accept: 'application/json',
       },
-      body: JSON.stringify(orders),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok && attempt < 2) {
@@ -305,10 +345,11 @@ const OrderStore = (() => {
   function shareLinks(id) {
     const sid = id || getStorageId();
     if (!sid) return null;
-    const base = window.location.href
-      .split('?')[0]
-      .replace(/admin\.html$/i, 'index.html');
-    const adminBase = base.replace(/index\.html$/i, 'admin.html');
+    const href = window.location.href.split('?')[0];
+    const base = href.replace(/admin\.html$/i, 'index.html').replace(/\/admin\/?$/i, '/index.html');
+    const adminBase = base
+      .replace(/index\.html$/i, 'admin.html')
+      .replace(/\/index\.html$/i, '/admin.html');
     return {
       id: sid,
       orderUrl: `${base}?sid=${encodeURIComponent(sid)}`,
@@ -317,6 +358,8 @@ const OrderStore = (() => {
   }
 
   return {
+    getApiKey,
+    setApiKey,
     getStorageId,
     setStorageId,
     createStorage,

@@ -8,6 +8,9 @@ const els = {
   toast: document.getElementById('toast'),
   setupPanel: document.getElementById('cloud-setup'),
   storageIdText: document.getElementById('storage-id-text'),
+  apiKeyText: document.getElementById('api-key-text'),
+  apiKeyInput: document.getElementById('api-key-input'),
+  saveApiKeyBtn: document.getElementById('save-api-key-btn'),
   orderLink: document.getElementById('order-link'),
   adminLink: document.getElementById('admin-link'),
   createBtn: document.getElementById('create-storage-btn'),
@@ -46,7 +49,19 @@ function formatTime(iso) {
   });
 }
 
+function maskKey(key) {
+  if (!key) return '尚未設定';
+  if (key.length <= 8) return '********';
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
 function renderSetup() {
+  const key = OrderStore.getApiKey();
+  if (els.apiKeyText) els.apiKeyText.textContent = maskKey(key);
+  if (els.apiKeyInput && key && !els.apiKeyInput.value) {
+    els.apiKeyInput.value = key;
+  }
+
   const links = OrderStore.shareLinks();
   if (!links) {
     els.storageIdText.textContent = '尚未建立';
@@ -189,7 +204,21 @@ async function copyText(text) {
   showToast('已複製連結');
 }
 
+els.saveApiKeyBtn.addEventListener('click', () => {
+  const key = els.apiKeyInput.value.trim();
+  if (!key) {
+    showToast('請貼上 API Key');
+    return;
+  }
+  OrderStore.setApiKey(key);
+  renderSetup();
+  showToast('API Key 已儲存');
+});
+
 els.createBtn.addEventListener('click', async () => {
+  const typedKey = els.apiKeyInput.value.trim();
+  if (typedKey) OrderStore.setApiKey(typedKey);
+
   els.createBtn.disabled = true;
   try {
     await OrderStore.createStorage();
@@ -214,7 +243,7 @@ els.connectBtn.addEventListener('click', async () => {
     return;
   }
   if (!id.includes('/') && !/^https?:\/\//i.test(id)) {
-    showToast('ID 格式不正確，請用後台「建立訂單庫」取得');
+    showToast('ID 格式應為 userId/itemId');
     return;
   }
   OrderStore.setStorageId(id);

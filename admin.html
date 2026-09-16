@@ -30,19 +30,24 @@
       <section class="panel" id="cloud-setup">
         <h3>雲端訂單庫</h3>
         <p class="setup-desc">
-          第一次使用請按「建立訂單庫」，再把點餐／後台連結分享給其他裝置。
-          請用網站網址開啟（勿直接雙擊本機檔案）。
-          建立後也可把顯示的 ID（格式如 <code>xxxx/yyyy</code>）填進
-          <code>js/config.js</code> 的 <code>storageId</code>。
+          雲端服務需 API Key。請到
+          <a href="https://app.jsonstorage.net" target="_blank" rel="noopener">app.jsonstorage.net</a>
+          免費註冊並建立 API Key，貼上後再按「建立訂單庫」。
+          建議同時把 Key 與 ID 寫進 <code>js/config.js</code>，上線後所有裝置才能下單同步。
         </p>
         <div class="setup-actions">
+          <div class="setup-connect" style="flex: 1 1 100%">
+            <input id="api-key-input" type="text" placeholder="貼上 API Key" autocomplete="off" />
+            <button class="btn" id="save-api-key-btn" type="button">儲存 Key</button>
+          </div>
           <button class="btn btn-primary" id="create-storage-btn" type="button">建立訂單庫</button>
           <div class="setup-connect">
-            <input id="storage-id-input" type="text" placeholder="已有 ID？貼上這裡連接" />
+            <input id="storage-id-input" type="text" placeholder="已有訂單庫 ID？貼上這裡連接" />
             <button class="btn" id="connect-storage-btn" type="button">連接</button>
           </div>
         </div>
         <div class="setup-meta">
+          <div><span class="muted">API Key</span><strong id="api-key-text">尚未設定</strong></div>
           <div><span class="muted">訂單庫 ID</span><strong id="storage-id-text">尚未建立</strong></div>
           <div>
             <span class="muted">點餐連結</span>

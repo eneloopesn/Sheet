@@ -1,20 +1,24 @@
 # 烤食煮盒 ROAST & COOK
 
-訂單存在雲端（jsonstorage），任何裝置、任何瀏覽器都能同步。
+純靜態點餐網頁。訂單存在 jsonstorage 雲端，可跨裝置／瀏覽器同步。
 
-## 使用
+## 第一次設定
 
-1. **先把網站用網址開啟**（上傳到靜態空間，或本機用 Live Server／`npx serve`），不要直接雙擊 `file://`
-2. 開啟 `admin.html`，按「建立訂單庫」
-3. 複製「點餐連結／後台連結」分享給其他裝置
-4. （可選）把 ID 填進 `js/config.js` 的 `storageId`
+1. 開啟 https://app.jsonstorage.net 免費註冊
+2. 建立一把有 **Create** 權限的 API Key
+3. 把 Key 填進 `js/config.js` 的 `apiKey`（或後台輸入後按「儲存 Key」）
+4. 用網站網址開啟 `admin.html`（不要雙擊本機檔案）
+5. 按「建立訂單庫」
+6. 把顯示的訂單庫 ID 填回 `js/config.js` 的 `storageId`
+
+完成後，點餐頁與後台即可跨裝置同步。
 
 ## 檔案
 
 ```
-index.html      點餐頁
-admin.html      後台統計
-js/config.js    雲端訂單庫 ID（可選預填）
+index.html
+admin.html
+js/config.js    ← apiKey、storageId
 js/menu.js
 js/store.js
 js/app.js
