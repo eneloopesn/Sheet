@@ -8,7 +8,7 @@
 const FIREBASE_CONFIG = {
   apiKey: "",
   authDomain: "",
-  databaseURL: "https://project-5284780330097518053-default-rtdb.firebaseio.com/",
+  databaseURL: "https://console.firebase.google.com/project/project-5284780330097518053/database/project-5284780330097518053-default-rtdb/data/~2F",
   projectId: "",
   storageBucket: "",
   messagingSenderId: "",
