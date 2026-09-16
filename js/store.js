@@ -1,8 +1,7 @@
 const OrderStore = (() => {
   const LOCAL_SID_KEY = 'roast-cook-storage-id';
-  const API = 'https://jsonblob.com/api/jsonBlob';
-
-  let etag = null;
+  // 使用會把 ID 回在 JSON body 的服務，避免 Location 標頭被 CORS 擋下
+  const CREATE_URL = 'https://jsonstorage.net/api/items';
 
   function resolveStorageId() {
     const params = new URLSearchParams(window.location.search);
@@ -11,9 +10,10 @@ const OrderStore = (() => {
       localStorage.setItem(LOCAL_SID_KEY, fromQuery);
       return fromQuery;
     }
-    const fromConfig = (window.APP_CONFIG && window.APP_CONFIG.storageId
-      ? String(window.APP_CONFIG.storageId)
-      : ''
+    const fromConfig = (
+      window.APP_CONFIG && window.APP_CONFIG.storageId
+        ? String(window.APP_CONFIG.storageId)
+        : ''
     ).trim();
     if (fromConfig) return fromConfig;
     return (localStorage.getItem(LOCAL_SID_KEY) || '').trim();
@@ -30,11 +30,34 @@ const OrderStore = (() => {
   }
 
   function endpoint(id) {
-    return `${API}/${id}`;
+    const value = String(id || '').trim();
+    if (!value) throw new Error('尚未設定雲端訂單庫');
+    if (/^https?:\/\//i.test(value)) return value;
+    // 相容舊版 jsonblob ID
+    if (/^[0-9a-f-]{36}$/i.test(value) || value.length > 20) {
+      return `${CREATE_URL}/${value}`;
+    }
+    return `https://jsonblob.com/api/jsonBlob/${value}`;
+  }
+
+  function extractIdFromUri(uri) {
+    if (!uri) return '';
+    const clean = String(uri).split('?')[0].replace(/\/$/, '');
+    return clean.split('/').pop() || '';
+  }
+
+  function assertOnline() {
+    if (location.protocol === 'file:') {
+      throw new Error(
+        '請勿直接雙擊開啟檔案。請上傳到網站，或用本機伺服器開啟後再建立訂單庫'
+      );
+    }
   }
 
   async function createStorage() {
-    const res = await fetch(API, {
+    assertOnline();
+
+    const res = await fetch(CREATE_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -42,56 +65,70 @@ const OrderStore = (() => {
       },
       body: JSON.stringify([]),
     });
-    if (!res.ok) throw new Error('無法建立雲端訂單庫，請稍後再試');
 
-    const location = res.headers.get('Location') || '';
-    const id = location.split('/').pop();
-    if (!id) throw new Error('建立成功但無法取得 ID');
+    if (!res.ok) {
+      throw new Error(`無法建立雲端訂單庫（${res.status}），請稍後再試`);
+    }
 
-    etag = res.headers.get('ETag');
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    const uri =
+      (data && (data.uri || data.url || data.href)) ||
+      res.headers.get('Location') ||
+      '';
+    const id = extractIdFromUri(uri);
+    if (!id) {
+      throw new Error('建立成功但無法取得 ID，請換網路環境後重試');
+    }
+
     setStorageId(id);
     return id;
   }
 
   async function fetchOrders() {
+    assertOnline();
     const id = getStorageId();
     if (!id) throw new Error('尚未設定雲端訂單庫');
 
     const res = await fetch(endpoint(id), {
       headers: { Accept: 'application/json' },
+      cache: 'no-store',
     });
     if (res.status === 404) throw new Error('找不到雲端訂單庫，請重新建立');
-    if (!res.ok) throw new Error('讀取訂單失敗');
+    if (!res.ok) throw new Error(`讀取訂單失敗（${res.status}）`);
 
-    etag = res.headers.get('ETag') || etag;
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.orders)) return data.orders;
+    return [];
   }
 
   async function saveOrders(orders, attempt = 0) {
+    assertOnline();
     const id = getStorageId();
     if (!id) throw new Error('尚未設定雲端訂單庫');
 
-    const headers = {
-      'Content-Type': 'application/json; charset=utf-8',
-      Accept: 'application/json',
-    };
-    if (etag) headers['If-Match'] = etag;
-
     const res = await fetch(endpoint(id), {
       method: 'PUT',
-      headers,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json',
+      },
       body: JSON.stringify(orders),
     });
 
-    if (res.status === 412 && attempt < 3) {
+    if (!res.ok && attempt < 2) {
+      // 併發寫入時重讀再合並重試
       const latest = await fetchOrders();
       const merged = mergeOrders(latest, orders);
       return saveOrders(merged, attempt + 1);
     }
-    if (!res.ok) throw new Error('儲存訂單失敗');
-
-    etag = res.headers.get('ETag') || etag;
+    if (!res.ok) throw new Error(`儲存訂單失敗（${res.status}）`);
     return orders;
   }
 
@@ -104,7 +141,6 @@ const OrderStore = (() => {
         map.set(order.id, order);
         continue;
       }
-      // 後寫入的狀態變更優先（同 id）
       map.set(order.id, { ...prev, ...order });
     }
     return [...map.values()].sort(
@@ -257,7 +293,9 @@ const OrderStore = (() => {
   function shareLinks(id) {
     const sid = id || getStorageId();
     if (!sid) return null;
-    const base = window.location.href.split('?')[0].replace(/admin\.html$/i, 'index.html');
+    const base = window.location.href
+      .split('?')[0]
+      .replace(/admin\.html$/i, 'index.html');
     const adminBase = base.replace(/index\.html$/i, 'admin.html');
     return {
       id: sid,

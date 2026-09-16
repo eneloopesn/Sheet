@@ -197,7 +197,11 @@ els.createBtn.addEventListener('click', async () => {
     await loadStats();
     showToast('雲端訂單庫已建立');
   } catch (err) {
-    showToast(err.message || '建立失敗');
+    const msg =
+      err && err.message
+        ? err.message
+        : '建立失敗，請確認已用網站網址開啟（非 file://）';
+    showToast(msg);
   } finally {
     els.createBtn.disabled = false;
   }
