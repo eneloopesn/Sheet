@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>後台統計｜烤食煮盒</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-logo" aria-hidden="true">🐔</div>
+          <div class="brand-text">
+            <div class="brand-mark">烤食煮盒</div>
+            <div class="brand-sub">後台統計</div>
+          </div>
+        </div>
+        <nav class="nav-links">
+          <a href="index.html">回點餐頁</a>
+          <button class="btn" id="refresh-btn" type="button">重新整理</button>
+        </nav>
+      </header>
+
+      <div class="section-head">
+        <div>
+          <h2>營運總覽</h2>
+          <p>訂單、營收與熱銷品項（本機瀏覽器儲存）</p>
+        </div>
+      </div>
+
+      <div class="admin-grid" id="stat-cards"></div>
+
+      <div class="two-col">
+        <section class="panel">
+          <h3>熱銷 TOP 5</h3>
+          <div class="bars" id="top-items"></div>
+        </section>
+        <section class="panel">
+          <h3>今日時段分布</h3>
+          <div class="hour-chart" id="hour-chart"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h3>訂單狀態</h3>
+        <div class="admin-grid" id="status-cards" style="margin-bottom: 0"></div>
+      </section>
+
+      <section class="panel">
+        <h3>最近訂單</h3>
+        <div style="overflow-x: auto">
+          <table class="orders-table">
+            <thead>
+              <tr>
+                <th>時間</th>
+                <th>顧客</th>
+                <th>品項</th>
+                <th>金額</th>
+                <th>狀態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="js/menu.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/admin.js"></script>
+  </body>
+</html>
