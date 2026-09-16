@@ -1,21 +1,118 @@
 const OrderStore = (() => {
-  const KEY = 'roast-cook-orders';
+  const LOCAL_SID_KEY = 'roast-cook-storage-id';
+  const API = 'https://jsonblob.com/api/jsonBlob';
 
-  function readOrders() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      const list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list : [];
-    } catch {
-      return [];
+  let etag = null;
+
+  function resolveStorageId() {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = (params.get('sid') || '').trim();
+    if (fromQuery) {
+      localStorage.setItem(LOCAL_SID_KEY, fromQuery);
+      return fromQuery;
     }
+    const fromConfig = (window.APP_CONFIG && window.APP_CONFIG.storageId
+      ? String(window.APP_CONFIG.storageId)
+      : ''
+    ).trim();
+    if (fromConfig) return fromConfig;
+    return (localStorage.getItem(LOCAL_SID_KEY) || '').trim();
   }
 
-  function writeOrders(orders) {
-    localStorage.setItem(KEY, JSON.stringify(orders));
+  function getStorageId() {
+    return resolveStorageId();
   }
 
-  function createOrder({ customerName, items }) {
+  function setStorageId(id) {
+    const value = String(id || '').trim();
+    localStorage.setItem(LOCAL_SID_KEY, value);
+    return value;
+  }
+
+  function endpoint(id) {
+    return `${API}/${id}`;
+  }
+
+  async function createStorage() {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify([]),
+    });
+    if (!res.ok) throw new Error('無法建立雲端訂單庫，請稍後再試');
+
+    const location = res.headers.get('Location') || '';
+    const id = location.split('/').pop();
+    if (!id) throw new Error('建立成功但無法取得 ID');
+
+    etag = res.headers.get('ETag');
+    setStorageId(id);
+    return id;
+  }
+
+  async function fetchOrders() {
+    const id = getStorageId();
+    if (!id) throw new Error('尚未設定雲端訂單庫');
+
+    const res = await fetch(endpoint(id), {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.status === 404) throw new Error('找不到雲端訂單庫，請重新建立');
+    if (!res.ok) throw new Error('讀取訂單失敗');
+
+    etag = res.headers.get('ETag') || etag;
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  async function saveOrders(orders, attempt = 0) {
+    const id = getStorageId();
+    if (!id) throw new Error('尚未設定雲端訂單庫');
+
+    const headers = {
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json',
+    };
+    if (etag) headers['If-Match'] = etag;
+
+    const res = await fetch(endpoint(id), {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(orders),
+    });
+
+    if (res.status === 412 && attempt < 3) {
+      const latest = await fetchOrders();
+      const merged = mergeOrders(latest, orders);
+      return saveOrders(merged, attempt + 1);
+    }
+    if (!res.ok) throw new Error('儲存訂單失敗');
+
+    etag = res.headers.get('ETag') || etag;
+    return orders;
+  }
+
+  function mergeOrders(base, incoming) {
+    const map = new Map();
+    for (const order of base) map.set(order.id, order);
+    for (const order of incoming) {
+      const prev = map.get(order.id);
+      if (!prev) {
+        map.set(order.id, order);
+        continue;
+      }
+      // 後寫入的狀態變更優先（同 id）
+      map.set(order.id, { ...prev, ...order });
+    }
+    return [...map.values()].sort(
+      (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+    );
+  }
+
+  function normalizeItems(items) {
     const menuMap = Object.fromEntries(
       (window.ROAST_MENU || []).map((m) => [m.id, m])
     );
@@ -41,9 +138,15 @@ const OrderStore = (() => {
     }
 
     if (!normalized.length) throw new Error('購物車是空的');
+    return normalized;
+  }
 
+  async function createOrder({ customerName, items }) {
+    if (!getStorageId()) throw new Error('尚未設定雲端訂單庫，請先到後台啟用');
+
+    const normalized = normalizeItems(items);
     const order = {
-      id: `O${Date.now()}`,
+      id: `O${Date.now()}${Math.floor(Math.random() * 1000)}`,
       customerName: String(customerName).trim().slice(0, 40),
       items: normalized,
       total: normalized.reduce((s, i) => s + i.subtotal, 0),
@@ -51,25 +154,25 @@ const OrderStore = (() => {
       createdAt: new Date().toISOString(),
     };
 
-    const orders = readOrders();
+    const orders = await fetchOrders();
     orders.push(order);
-    writeOrders(orders);
+    await saveOrders(orders);
     return order;
   }
 
-  function updateStatus(id, status) {
+  async function updateStatus(id, status) {
     const allowed = ['pending', 'preparing', 'done', 'cancelled'];
     if (!allowed.includes(status)) throw new Error('狀態不正確');
-    const orders = readOrders();
+
+    const orders = await fetchOrders();
     const order = orders.find((o) => o.id === id);
     if (!order) throw new Error('找不到訂單');
     order.status = status;
-    writeOrders(orders);
+    await saveOrders(orders);
     return order;
   }
 
-  function getStats() {
-    const orders = readOrders();
+  function buildStats(orders) {
     const active = orders.filter((o) => o.status !== 'cancelled');
 
     const todayStr = new Date().toLocaleDateString('en-CA', {
@@ -146,5 +249,31 @@ const OrderStore = (() => {
     };
   }
 
-  return { readOrders, createOrder, updateStatus, getStats };
+  async function getStats() {
+    const orders = await fetchOrders();
+    return buildStats(orders);
+  }
+
+  function shareLinks(id) {
+    const sid = id || getStorageId();
+    if (!sid) return null;
+    const base = window.location.href.split('?')[0].replace(/admin\.html$/i, 'index.html');
+    const adminBase = base.replace(/index\.html$/i, 'admin.html');
+    return {
+      id: sid,
+      orderUrl: `${base}?sid=${encodeURIComponent(sid)}`,
+      adminUrl: `${adminBase}?sid=${encodeURIComponent(sid)}`,
+    };
+  }
+
+  return {
+    getStorageId,
+    setStorageId,
+    createStorage,
+    fetchOrders,
+    createOrder,
+    updateStatus,
+    getStats,
+    shareLinks,
+  };
 })();

@@ -6,6 +6,15 @@ const els = {
   ordersBody: document.getElementById('orders-body'),
   refresh: document.getElementById('refresh-btn'),
   toast: document.getElementById('toast'),
+  setupPanel: document.getElementById('cloud-setup'),
+  storageIdText: document.getElementById('storage-id-text'),
+  orderLink: document.getElementById('order-link'),
+  adminLink: document.getElementById('admin-link'),
+  createBtn: document.getElementById('create-storage-btn'),
+  connectBtn: document.getElementById('connect-storage-btn'),
+  storageInput: document.getElementById('storage-id-input'),
+  copyOrderBtn: document.getElementById('copy-order-link'),
+  copyAdminBtn: document.getElementById('copy-admin-link'),
 };
 
 const STATUS_LABEL = {
@@ -35,6 +44,26 @@ function formatTime(iso) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function renderSetup() {
+  const links = OrderStore.shareLinks();
+  if (!links) {
+    els.storageIdText.textContent = '尚未建立';
+    els.orderLink.textContent = '—';
+    els.adminLink.textContent = '—';
+    els.orderLink.removeAttribute('href');
+    els.adminLink.removeAttribute('href');
+    return;
+  }
+  els.storageIdText.textContent = links.id;
+  els.orderLink.textContent = links.orderUrl;
+  els.orderLink.href = links.orderUrl;
+  els.adminLink.textContent = links.adminUrl;
+  els.adminLink.href = links.adminUrl;
+  if (els.storageInput && !els.storageInput.value) {
+    els.storageInput.value = links.id;
+  }
 }
 
 function renderStats(stats) {
@@ -136,26 +165,94 @@ function renderStats(stats) {
     .join('');
 }
 
-function loadStats() {
-  renderStats(OrderStore.getStats());
+async function loadStats() {
+  if (!OrderStore.getStorageId()) {
+    els.cards.innerHTML = `
+      <div class="stat-card" style="grid-column: 1 / -1">
+        <div class="label">雲端訂單庫</div>
+        <div class="value" style="font-size:1.4rem">尚未啟用</div>
+        <div class="sub">請先在下方建立或連接訂單庫</div>
+      </div>`;
+    els.topItems.innerHTML = '';
+    els.hourChart.innerHTML = '';
+    els.statusCards.innerHTML = '';
+    els.ordersBody.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">啟用後即可查看訂單</td></tr>`;
+    return;
+  }
+
+  const stats = await OrderStore.getStats();
+  renderStats(stats);
 }
 
-els.ordersBody.addEventListener('click', (e) => {
+async function copyText(text) {
+  await navigator.clipboard.writeText(text);
+  showToast('已複製連結');
+}
+
+els.createBtn.addEventListener('click', async () => {
+  els.createBtn.disabled = true;
+  try {
+    await OrderStore.createStorage();
+    renderSetup();
+    await loadStats();
+    showToast('雲端訂單庫已建立');
+  } catch (err) {
+    showToast(err.message || '建立失敗');
+  } finally {
+    els.createBtn.disabled = false;
+  }
+});
+
+els.connectBtn.addEventListener('click', async () => {
+  const id = els.storageInput.value.trim();
+  if (!id) {
+    showToast('請輸入訂單庫 ID');
+    return;
+  }
+  OrderStore.setStorageId(id);
+  renderSetup();
+  try {
+    await loadStats();
+    showToast('已連接雲端訂單庫');
+  } catch (err) {
+    showToast(err.message || '連接失敗');
+  }
+});
+
+els.copyOrderBtn.addEventListener('click', () => {
+  const links = OrderStore.shareLinks();
+  if (!links) return showToast('請先建立訂單庫');
+  copyText(links.orderUrl).catch(() => showToast('複製失敗'));
+});
+
+els.copyAdminBtn.addEventListener('click', () => {
+  const links = OrderStore.shareLinks();
+  if (!links) return showToast('請先建立訂單庫');
+  copyText(links.adminUrl).catch(() => showToast('複製失敗'));
+});
+
+els.ordersBody.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-id][data-status]');
   if (!btn) return;
   try {
-    const order = OrderStore.updateStatus(btn.dataset.id, btn.dataset.status);
+    const order = await OrderStore.updateStatus(btn.dataset.id, btn.dataset.status);
     showToast(`已更新為${STATUS_LABEL[order.status]}`);
-    loadStats();
+    await loadStats();
   } catch (err) {
     showToast(err.message);
   }
 });
 
 els.refresh.addEventListener('click', () => {
-  loadStats();
-  showToast('已更新');
+  loadStats()
+    .then(() => showToast('已更新'))
+    .catch((err) => showToast(err.message || '載入失敗'));
 });
 
-loadStats();
-setInterval(loadStats, 8000);
+renderSetup();
+loadStats().catch((err) => showToast(err.message || '無法載入統計'));
+setInterval(() => {
+  if (OrderStore.getStorageId()) {
+    loadStats().catch(() => {});
+  }
+}, 8000);

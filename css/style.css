@@ -241,7 +241,8 @@ select {
   color: var(--yellow);
 }
 
-.bento-note {
+.bento-note,
+.cloud-banner {
   margin: 0 0 1.4rem;
   padding: 0.95rem 1.1rem;
   border-radius: 14px;
@@ -250,6 +251,73 @@ select {
   font-size: 0.92rem;
   line-height: 1.55;
   animation: rise 0.6s ease both;
+}
+
+.cloud-banner a {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.setup-desc {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.setup-desc code {
+  background: rgba(26, 26, 26, 0.06);
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.setup-connect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 240px;
+}
+
+.setup-connect input {
+  flex: 1;
+  min-width: 180px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  padding: 0.65rem 1rem;
+  background: var(--paper);
+}
+
+.setup-meta {
+  display: grid;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.setup-meta .muted {
+  display: inline-block;
+  min-width: 5.5rem;
+  color: var(--muted);
+  margin-right: 0.5rem;
+}
+
+.setup-meta a {
+  word-break: break-all;
+  margin-right: 0.4rem;
+}
+
+.btn-mini {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
 }
 
 .section-head {

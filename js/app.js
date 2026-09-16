@@ -14,6 +14,7 @@ const els = {
   submit: document.getElementById('submit-order'),
   toast: document.getElementById('toast'),
   customerName: document.getElementById('customerName'),
+  cloudBanner: document.getElementById('cloud-banner'),
 };
 
 function money(n) {
@@ -148,6 +149,17 @@ function renderCart() {
   els.cartTotal.textContent = money(cartTotal());
 }
 
+function updateCloudBanner() {
+  if (!els.cloudBanner) return;
+  if (OrderStore.getStorageId()) {
+    els.cloudBanner.hidden = true;
+    els.submit.disabled = false;
+  } else {
+    els.cloudBanner.hidden = false;
+    els.submit.disabled = true;
+  }
+}
+
 els.filters.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-cat]');
   if (!btn) return;
@@ -189,10 +201,14 @@ els.cartList.addEventListener('click', (e) => {
   }
 });
 
-els.submit.addEventListener('click', () => {
+els.submit.addEventListener('click', async () => {
   const customerName = els.customerName.value.trim();
   const items = cartItems().map((i) => ({ id: i.id, qty: i.qty }));
 
+  if (!OrderStore.getStorageId()) {
+    showToast('請先到後台啟用雲端訂單庫');
+    return;
+  }
   if (!items.length) {
     showToast('請先選餐');
     return;
@@ -205,17 +221,18 @@ els.submit.addEventListener('click', () => {
 
   els.submit.disabled = true;
   try {
-    const order = OrderStore.createOrder({ customerName, items });
+    const order = await OrderStore.createOrder({ customerName, items });
     state.cart = {};
     renderCart();
     showToast(`訂單已送出：${order.id}`);
   } catch (err) {
-    showToast(err.message);
+    showToast(err.message || '送出失敗');
   } finally {
-    els.submit.disabled = false;
+    els.submit.disabled = !OrderStore.getStorageId();
   }
 });
 
 renderFilters();
 renderMenu();
 renderCart();
+updateCloudBanner();

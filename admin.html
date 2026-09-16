@@ -27,13 +27,33 @@
           <button class="btn" id="refresh-btn" type="button">重新整理</button>
         </nav>
       </header>
-<!--
-      <div class="section-head">
-        <div>
-          <h2>營運總覽</h2>
-          <p>訂單、營收與熱銷品項（本機瀏覽器儲存）</p>
+      <section class="panel" id="cloud-setup">
+        <h3>雲端訂單庫</h3>
+        <p class="setup-desc">
+          第一次使用請按「建立訂單庫」，再把點餐／後台連結分享給其他裝置。也可把 ID 填進
+          <code>js/config.js</code> 的 <code>storageId</code>，之後就不用帶網址參數。
+        </p>
+        <div class="setup-actions">
+          <button class="btn btn-primary" id="create-storage-btn" type="button">建立訂單庫</button>
+          <div class="setup-connect">
+            <input id="storage-id-input" type="text" placeholder="已有 ID？貼上這裡連接" />
+            <button class="btn" id="connect-storage-btn" type="button">連接</button>
+          </div>
         </div>
-      </div>-->
+        <div class="setup-meta">
+          <div><span class="muted">訂單庫 ID</span><strong id="storage-id-text">尚未建立</strong></div>
+          <div>
+            <span class="muted">點餐連結</span>
+            <a id="order-link" href="#">—</a>
+            <button class="btn btn-mini" id="copy-order-link" type="button">複製</button>
+          </div>
+          <div>
+            <span class="muted">後台連結</span>
+            <a id="admin-link" href="#">—</a>
+            <button class="btn btn-mini" id="copy-admin-link" type="button">複製</button>
+          </div>
+        </div>
+      </section>
 
       <div class="admin-grid" id="stat-cards"></div>
 
@@ -74,6 +94,7 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
+    <script src="js/config.js"></script>
     <script src="js/menu.js"></script>
     <script src="js/store.js"></script>
     <script src="js/admin.js"></script>
