@@ -213,6 +213,10 @@ els.connectBtn.addEventListener('click', async () => {
     showToast('請輸入訂單庫 ID');
     return;
   }
+  if (!id.includes('/') && !/^https?:\/\//i.test(id)) {
+    showToast('ID 格式不正確，請用後台「建立訂單庫」取得');
+    return;
+  }
   OrderStore.setStorageId(id);
   renderSetup();
   try {

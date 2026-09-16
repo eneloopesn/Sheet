@@ -1,14 +1,13 @@
 const OrderStore = (() => {
   const LOCAL_SID_KEY = 'roast-cook-storage-id';
-  // 使用會把 ID 回在 JSON body 的服務，避免 Location 標頭被 CORS 擋下
-  const CREATE_URL = 'https://jsonstorage.net/api/items';
+  const API_BASE = 'https://api.jsonstorage.net/v1/json';
 
   function resolveStorageId() {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = (params.get('sid') || '').trim();
     if (fromQuery) {
-      localStorage.setItem(LOCAL_SID_KEY, fromQuery);
-      return fromQuery;
+      localStorage.setItem(LOCAL_SID_KEY, decodeURIComponent(fromQuery));
+      return decodeURIComponent(fromQuery);
     }
     const fromConfig = (
       window.APP_CONFIG && window.APP_CONFIG.storageId
@@ -33,16 +32,28 @@ const OrderStore = (() => {
     const value = String(id || '').trim();
     if (!value) throw new Error('尚未設定雲端訂單庫');
     if (/^https?:\/\//i.test(value)) return value;
-    // 相容舊版 jsonblob ID
-    if (/^[0-9a-f-]{36}$/i.test(value) || value.length > 20) {
-      return `${CREATE_URL}/${value}`;
+    // 新版格式：userId/itemId
+    if (value.includes('/')) return `${API_BASE}/${value}`;
+    // 舊版單一 UUID（jsonstorage / jsonblob 相容嘗試）
+    if (/^[0-9a-f-]{36}$/i.test(value)) {
+      return `https://jsonstorage.net/api/items/${value}`;
     }
-    return `https://jsonblob.com/api/jsonBlob/${value}`;
+    return `${API_BASE}/${value}`;
   }
 
-  function extractIdFromUri(uri) {
-    if (!uri) return '';
-    const clean = String(uri).split('?')[0].replace(/\/$/, '');
+  function extractStorageId(uriOrId) {
+    const raw = String(uriOrId || '').trim();
+    if (!raw) return '';
+
+    // https://api.jsonstorage.net/v1/json/{userId}/{itemId}
+    const match = raw.match(/\/v1\/json\/([^/?#]+\/[^/?#]+)/i);
+    if (match) return match[1];
+
+    // 已是 userId/itemId
+    if (/^[^/]+\/[^/]+$/.test(raw)) return raw;
+
+    // 舊版整段 URL 的最後一段
+    const clean = raw.split('?')[0].replace(/\/$/, '');
     return clean.split('/').pop() || '';
   }
 
@@ -57,7 +68,7 @@ const OrderStore = (() => {
   async function createStorage() {
     assertOnline();
 
-    const res = await fetch(CREATE_URL, {
+    const res = await fetch(API_BASE, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -81,8 +92,8 @@ const OrderStore = (() => {
       (data && (data.uri || data.url || data.href)) ||
       res.headers.get('Location') ||
       '';
-    const id = extractIdFromUri(uri);
-    if (!id) {
+    const id = extractStorageId(uri);
+    if (!id || !id.includes('/')) {
       throw new Error('建立成功但無法取得 ID，請換網路環境後重試');
     }
 
@@ -99,7 +110,9 @@ const OrderStore = (() => {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
-    if (res.status === 404) throw new Error('找不到雲端訂單庫，請重新建立');
+    if (res.status === 404) {
+      throw new Error('找不到雲端訂單庫，請到後台重新按「建立訂單庫」');
+    }
     if (!res.ok) throw new Error(`讀取訂單失敗（${res.status}）`);
 
     const data = await res.json();
@@ -123,7 +136,6 @@ const OrderStore = (() => {
     });
 
     if (!res.ok && attempt < 2) {
-      // 併發寫入時重讀再合並重試
       const latest = await fetchOrders();
       const merged = mergeOrders(latest, orders);
       return saveOrders(merged, attempt + 1);
